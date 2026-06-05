@@ -1,0 +1,12 @@
+{
+    "fuel_economy_l_100km": 1.27,
+    "soc_deviation_pct": 1.86,
+    "energy_recuperation_pct": 92.0,
+    "ev_mode_share_pct": 39.9,
+    "hybrid_mode_share_pct": 13.8,
+    "ice_mode_share_pct": 17.3,
+    "operating_cost_currency_km": 0.0358,
+    "co2_g_km": 29.3,
+    "average_ice_efficiency_pct": 33.2,
+    "peak_battery_power_kw": 22.17
+}

@@ -1,0 +1,13 @@
+PHEX HEV EMS Simulation - WLTP Urban KPI Summary Report
+=============================================
+
+Fuel Economy             : 0.17 L/100 km
+SOC Deviation (RMS)      : 1.00 %
+Energy Recuperation      : 92.0 %
+EV Mode Share            : 68.8 %
+Hybrid Mode Share        : 3.2 %
+ICE Mode Share           : 0.8 %
+Operating Cost Estimate  : 0.0228 currency/km
+CO2 Estimate             : 4.0 g/km
+Average ICE Efficiency   : 31.9 %
+Peak Battery Power       : 11.85 kW
