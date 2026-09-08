@@ -44,21 +44,7 @@ class EMSDecision:
     input_state: Optional[VehicleState] = None
 
 class RuleBasedEMS:
-    """
-    Deterministic rule-based EMS controller.
-    
-    Priority order (first match wins):
-    1. REGEN         — braking with energy recovery possible
-    2. IDLE_STOP     — vehicle stationary
-    3. ENGINE_CHARGE — battery critically low
-    4. BATTERY_ONLY  — city + heavy traffic + good SOC
-    5. ENGINE_ONLY   — highway cruise
-    6. HYBRID_ASSIST — high power demand
-    7. HYBRID_ASSIST — default fallback
-    
-    All thresholds sourced from config.py — never hardcoded.
-    """
-    
+
     def decide(self, state: VehicleState) -> EMSDecision:
         """
         Apply rule chain to vehicle state.

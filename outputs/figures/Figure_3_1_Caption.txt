@@ -1,0 +1,1 @@
+Figure 3.1: Overall architecture of the Project PHEX Hybrid Electric Vehicle Energy Management System (EMS), showing the hierarchical flow from route and traffic prediction through demand forecasting, strategic SOC planning, EMS mode selection, torque split control, and physical powertrain execution.

@@ -273,67 +273,38 @@ def generate_synthetic_efficiency(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def preprocess_behavior_dataset(df: pd.DataFrame) -> Tuple[pd.DataFrame, LabelEncoder, StandardScaler]:
-    """
-    Full preprocessing pipeline for the Driver Behavior dataset.
-    
-    Steps:
-      1. Remove duplicates
-      2. Handle missing values
-      3. Detect outliers (report only)
-      4. Clip extreme outliers
-      5. Generate synthetic efficiency target
-      6. Encode behavior labels (LabelEncoder)
-      7. Scale numeric features (StandardScaler)
-    
-    Args:
-        df: Raw Driver Behavior DataFrame.
-    
-    Returns:
-        Tuple of (processed_df, label_encoder, scaler)
-    """
     logger.info("\n" + "=" * 60)
     logger.info("  PREPROCESSING: Driver Behavior Dataset")
     logger.info("=" * 60)
-
     name = "Behavior"
-
     # 1. Duplicates
     df = remove_duplicates(df, name)
-
     # 2. Missing values
     df = handle_missing_values(df, name=name)
-
     # 3. Outlier detection
     numeric_cols = ["speed_kmph", "accel_x", "accel_y", "brake_pressure",
                     "steering_angle", "throttle", "lane_deviation",
                     "headway_distance", "reaction_time"]
     detect_outliers_iqr(df, columns=numeric_cols, name=name)
-
     # 4. Clip extreme outliers (only truly extreme ones, 3×IQR)
     df = clip_outliers(df, columns=numeric_cols, factor=3.0, name=name)
-
     # 5. Generate synthetic efficiency target
     df = generate_synthetic_efficiency(df)
-
     # 6. Encode behavior labels
     le = LabelEncoder()
     df["behavior_encoded"] = le.fit_transform(df["behavior_label"])
     logger.info(f"  [{name}] Label encoding: {dict(zip(le.classes_, le.transform(le.classes_)))}")
-
     # 7. Scale numeric features
     feature_cols = numeric_cols.copy()
     scaler = StandardScaler()
     df_scaled = df.copy()
     df_scaled[feature_cols] = scaler.fit_transform(df[feature_cols])
-    
     # Keep both scaled and unscaled versions
     # The unscaled version is useful for interpretability
     for col in feature_cols:
         df[f"{col}_scaled"] = df_scaled[col]
-
     logger.info(f"  [{name}] Scaled {len(feature_cols)} numeric features (StandardScaler)")
     logger.info(f"  [{name}] Final shape: {df.shape}")
-
     return df, le, scaler
 
 
@@ -342,39 +313,17 @@ def preprocess_behavior_dataset(df: pd.DataFrame) -> Tuple[pd.DataFrame, LabelEn
 # =============================================================================
 
 def engineer_imu_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Engineer physics-meaningful features from raw IMU data.
-    
-    New features:
-      - acc_magnitude:  Total acceleration magnitude = sqrt(x² + y² + z²)
-                        Measures overall force experienced by vehicle.
-      - gyro_magnitude: Total angular velocity = sqrt(gx² + gy² + gz²)
-                        Measures rotational dynamics (turning, swerving).
-      - jerk_x/y/z:     Rate of change of acceleration (derivative).
-                        High jerk = sudden changes = aggressive driving.
-      - jerk_magnitude: Total jerk magnitude.
-    
-    Args:
-        df: Raw telemetry DataFrame with AccX/Y/Z and GyroX/Y/Z.
-    
-    Returns:
-        DataFrame with engineered features added.
-    """
     # Acceleration magnitude (total g-force)
     df["acc_magnitude"] = np.sqrt(df["AccX"]**2 + df["AccY"]**2 + df["AccZ"]**2)
-
     # Gyroscope magnitude (total angular velocity)
     df["gyro_magnitude"] = np.sqrt(df["GyroX"]**2 + df["GyroY"]**2 + df["GyroZ"]**2)
-
     # Jerk (rate of acceleration change) — computed as difference
     # High jerk = sudden driving inputs = aggressive behavior
     df["jerk_x"] = df["AccX"].diff().fillna(0)
     df["jerk_y"] = df["AccY"].diff().fillna(0)
     df["jerk_z"] = df["AccZ"].diff().fillna(0)
     df["jerk_magnitude"] = np.sqrt(df["jerk_x"]**2 + df["jerk_y"]**2 + df["jerk_z"]**2)
-
     logger.info("  [Telemetry] Engineered features: acc_magnitude, gyro_magnitude, jerk_x/y/z, jerk_magnitude")
-
     return df
 
 
@@ -445,98 +394,55 @@ def flatten_nasa_battery(
     battery_data: Dict[str, Any],
     max_steps: Optional[int] = None,
 ) -> pd.DataFrame:
-    """
-    Flatten the nested NASA .mat structure into a tabular DataFrame.
-    
-    Each step becomes one row with aggregated features:
-      - mean/min/max voltage, current, temperature
-      - voltage delta (drop during step)
-      - step duration
-      - step type (C/D/R)
-      - cycle number (sequential index)
-    
-    This is the critical transformation that makes the NASA data
-    compatible with tabular ML models (RF, LR).
-    
-    Engineering note:
-    ────────────────
-    We aggregate per-step because:
-      1. Each step has variable-length time series (100-1100 points)
-      2. Tabular models need fixed-width feature vectors
-      3. Step-level aggregation preserves the key physics:
-         - Discharge capacity ≈ mean_current × duration
-         - Voltage sag indicates battery health
-         - Temperature rise indicates internal resistance
-    
-    Args:
-        battery_data: Dict of {battery_name: loaded_mat_data}.
-        max_steps:    Limit steps per battery (None = all, useful for testing).
-    
-    Returns:
-        DataFrame with one row per step, across all batteries.
-    """
     logger.info("\n" + "=" * 60)
     logger.info("  PREPROCESSING: NASA Battery Dataset")
     logger.info("=" * 60)
-
     rows = []
-
     for batt_name, mat_data in battery_data.items():
         steps = mat_data["data"]["step"]
         n_steps = len(steps) if max_steps is None else min(len(steps), max_steps)
         logger.info(f"  [{batt_name}] Processing {n_steps:,} / {len(steps):,} steps...")
-
         for i in range(n_steps):
             step = steps[i]
-
             # Extract arrays — handle scalar edge cases
             voltage = np.atleast_1d(step["voltage"]).flatten()
             current = np.atleast_1d(step["current"]).flatten()
             temperature = np.atleast_1d(step["temperature"]).flatten()
             rel_time = np.atleast_1d(step["relativeTime"]).flatten()
-
             # Skip steps with insufficient data (< 3 data points)
             if len(voltage) < 3:
                 continue
-
             # Compute aggregated features
             row = {
                 "battery": batt_name,
                 "step_index": i,
                 "step_type": step["type"],           # C, D, or R
                 "comment": step.get("comment", ""),
-
                 # Voltage features
                 "voltage_mean": voltage.mean(),
                 "voltage_min": voltage.min(),
                 "voltage_max": voltage.max(),
                 "voltage_std": voltage.std(),
                 "voltage_delta": voltage[-1] - voltage[0],  # drop during step
-
                 # Current features
                 "current_mean": current.mean(),
                 "current_min": current.min(),
                 "current_max": current.max(),
                 "current_std": current.std(),
                 "current_abs_mean": np.abs(current).mean(),
-
                 # Temperature features
                 "temp_mean": temperature.mean(),
                 "temp_min": temperature.min(),
                 "temp_max": temperature.max(),
                 "temp_delta": temperature[-1] - temperature[0],
-
                 # Duration
                 "duration_sec": rel_time[-1] if len(rel_time) > 0 else 0,
                 "n_datapoints": len(voltage),
-
                 # Derived: discharge capacity proxy
                 # capacity ≈ |mean_current| × duration (Ampere-seconds)
                 "capacity_proxy": np.abs(current.mean()) * (rel_time[-1] if len(rel_time) > 0 else 0),
             }
-
             rows.append(row)
-
     df = pd.DataFrame(rows)
 
     # Encode step type
@@ -687,41 +593,29 @@ def build_preprocessing_pipeline(
     return preprocessor
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Add all engineered features to DataFrame.
-    References config.py thresholds — never hardcoded.
-    """
     logger.info("Engineering EMS features...")
-    
     # 1. Flags
     df["high_power_flag"] = (df["power_required_kw"] > HIGH_POWER_KW).astype(int)
     df["low_soc_flag"] = (df["battery_soc"] < SOC_LOW).astype(int)
     df["critical_soc_flag"] = (df["battery_soc"] < SOC_CRITICAL).astype(int)
-    
     df["is_urban"] = (df["current_segment"] == 'urban').astype(int)
     df["is_highway"] = (df["current_segment"] == 'highway').astype(int)
     df["is_stop_go"] = (df["current_segment"] == 'stop_go').astype(int)
-    
     df["regen_candidate"] = ((df["braking"] == True) & 
                              (df["regen_available"] == True) & 
                              (df["speed"] > REGEN_MIN_SPEED)).astype(int)
-                             
     df["next_is_highway"] = (df["next_segment"] == 'highway').astype(int)
     df["next_is_traffic"] = df["next_segment"].isin(['traffic', 'stop_go']).astype(int)
-    
     # 2. Continuous features
     df["load_intensity_score"] = (df["power_required_kw"] + df["aux_load_kw"]) / 120.0
-    
     # Thermal and grade
     df["thermal_stress_flag"] = ((df["battery_temp"] > BATTERY_TEMP_MAX) | 
                                  (df["battery_temp"] < BATTERY_TEMP_MIN)).astype(int)
     df["uphill_flag"] = (df["grade_angle"] > 3.0).astype(int)
     df["downhill_flag"] = (df["grade_angle"] < -3.0).astype(int)
-    
     # Ratios and interactions
     df["power_per_speed"] = df["power_required_kw"] / (df["speed"] + 1e-3)
     df["soc_x_power"] = df["battery_soc"] * df["power_required_kw"]
-    
     logger.info(f"Engineered features added. New shape: {df.shape}")
     return df
 

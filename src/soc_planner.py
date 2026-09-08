@@ -38,27 +38,10 @@ class RouteContext:
 
 
 @dataclass
-class SOCPlan:
-    """Output of the SOC planner.
-
-    Attributes:
-        target_soc: Recommended SOC target as a fraction [0.0, 1.0].
-        rationale: Human-readable explanation for logging / debug.
-    """
-
+class SOCPlan:   
     target_soc: float
     rationale: str
-
-
 class SOCPlanner:
-    """Rule-based SOC planner.
-
-    Determines optimal target SOC given route context and current traffic
-    state.  The class interface is designed for ML replacement: a future
-    subclass need only override ``plan()`` with a model-based
-    implementation.
-    """
-
     def plan(
         self,
         traffic_state: TrafficState,
@@ -66,27 +49,6 @@ class SOCPlanner:
         current_soc: float,
         predicted_speed_profile: Optional[List[float]] = None,
     ) -> SOCPlan:
-        """Produces a SOC plan.
-
-        Rules (all targets from config.py):
-        1. If upcoming_zone == "urban" AND distance_to_zone_km < 10.0:
-           → target = SOC_URBAN_TARGET (preserve battery for urban EV use)
-        2. If upcoming_zone == "highway" AND current_soc > SOC_HIGHWAY_TARGET:
-           → target = SOC_HIGHWAY_TARGET (allow highway depletion)
-        3. If traffic_state == STOP_GO:
-           → target = SOC_URBAN_TARGET
-        4. Default:
-           → target = SOC_DEFAULT_TARGET
-
-        Args:
-            traffic_state: Current classified traffic state.
-            route_context: Parsed route lookahead.
-            current_soc: Current battery SOC as fraction.
-            predicted_speed_profile: Optional list of future speed samples (km/h).
-
-        Returns:
-            SOCPlan with target and human-readable rationale.
-        """
         # Rule 1 — upcoming urban zone within 10 km
         if (
             route_context.upcoming_zone == "urban"
@@ -104,7 +66,6 @@ class SOCPlanner:
                     f"Preserving battery at {SOC_URBAN_TARGET:.0%} for urban EV driving."
                 ),
             )
-
         # Rule 2 — highway zone with SOC above highway target
         if (
             route_context.upcoming_zone == "highway"
@@ -122,7 +83,6 @@ class SOCPlanner:
                     f"{SOC_HIGHWAY_TARGET:.0%}. Allowing charge depletion on highway."
                 ),
             )
-
         # Rule 3 — stop-and-go traffic
         if traffic_state == TrafficState.STOP_GO:
             logger.debug(
@@ -136,7 +96,6 @@ class SOCPlanner:
                     f"{SOC_URBAN_TARGET:.0%} for efficient EV crawling."
                 ),
             )
-
         # Rule 4 — default
         logger.debug("SOCPlanner rule 4: default → target=%.2f", SOC_DEFAULT_TARGET)
         return SOCPlan(

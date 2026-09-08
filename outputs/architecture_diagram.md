@@ -6,6 +6,7 @@ This document details the data flow and immutable control hierarchy of the Predi
 The control logic flows strictly top-down to prevent lower-level component constraints from leaking into strategic planners:
 
 ```mermaid
+%%{init: {'theme':'default'}}%%
 graph TD
     %% Define Nodes
     A["1. Traffic & Route Predictor<br>(RouteLogic & TrafficPredictor)"]
@@ -27,19 +28,20 @@ graph TD
     G --> H
 
     %% Class Styling
-    style A fill:#EFF6FF,stroke:#2563EB,stroke-width:2px
-    style B fill:#FAF5FF,stroke:#8B5CF6,stroke-width:2px
-    style C fill:#F5F3FF,stroke:#7C3AED,stroke-width:2px
-    style D fill:#ECFDF5,stroke:#059669,stroke-width:2px
-    style E fill:#FFFBEB,stroke:#D97706,stroke-width:2px
-    style F fill:#FFF1F2,stroke:#E11D48,stroke-width:2px
-    style G fill:#F8FAFC,stroke:#475569,stroke-width:2px
-    style H fill:#E0F2FE,stroke:#0284C7,stroke-width:2px
+    style A fill:#EFF6FF,stroke:#2563EB,stroke-width:2px,color:#000000
+    style B fill:#FAF5FF,stroke:#8B5CF6,stroke-width:2px,color:#000000
+    style C fill:#F5F3FF,stroke:#7C3AED,stroke-width:2px,color:#000000
+    style D fill:#ECFDF5,stroke:#059669,stroke-width:2px,color:#000000
+    style E fill:#FFFBEB,stroke:#D97706,stroke-width:2px,color:#000000
+    style F fill:#FFF1F2,stroke:#E11D48,stroke-width:2px,color:#000000
+    style G fill:#F8FAFC,stroke:#475569,stroke-width:2px,color:#000000
+    style H fill:#E0F2FE,stroke:#0284C7,stroke-width:2px,color:#000000
 ```
 
 ## Detailed Data Flow Map
 
 ```mermaid
+%%{init: {'theme':'default'}}%%
 flowchart TD
     subgraph RouteContext ["1. Traffic / Route Prediction Layer"]
         A1["RouteLogic"] -->|"position, distance, segments"| A3["RouteInfo"]

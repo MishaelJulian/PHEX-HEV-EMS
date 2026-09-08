@@ -90,11 +90,6 @@ def _clamp(value: float, low: float, high: float) -> float:
 # =============================================================================
 
 class DriveCycleGenerator:
-    """
-    Generates a single coherent driving trip as a time-series.
-    Speed, acceleration, SOC, and temperature evolve realistically.
-    """
-
     def __init__(self, rng: np.random.Generator, driver_profile: str, route_template: str):
         self.rng = rng
         self.profile = DRIVER_PROFILES[driver_profile]
@@ -105,33 +100,27 @@ class DriveCycleGenerator:
     def generate(self) -> pd.DataFrame:
         """Generate a complete trip as a DataFrame."""
         rows = []
-
         # Initial conditions
         soc = self.rng.uniform(10, 95)   # wide range to include low-SOC trips
         temp = self.rng.uniform(18, 32)
         speed = 0.0
         aux_load = self.rng.uniform(0.5, 3.0)
-
         # Build the full segment sequence
         segment_seq = []
         for seg_type, n_steps in self.route:
             # Add some variance to segment length
             actual_steps = max(5, int(n_steps * self.rng.uniform(0.7, 1.3)))
             segment_seq.extend([(seg_type)] * actual_steps)
-
         total_steps = len(segment_seq)
-
         for t in range(total_steps):
             curr_seg = segment_seq[t]
             next_seg = segment_seq[min(t + 1, total_steps - 1)]
-
             # Target speed for this segment
             seg_lo, seg_hi = SPEED_ENVELOPES.get(curr_seg, (0, 100))
             target_speed = self.rng.uniform(seg_lo * 0.6 + seg_hi * 0.4,
                                             seg_hi * 0.9)
             target_speed += self.rng.normal(0, self.profile["speed_noise"])
             target_speed = _clamp(target_speed, seg_lo, seg_hi)
-
             # Acceleration towards target (with driver personality)
             speed_error = target_speed - speed
             if abs(speed_error) < 2.0:
@@ -147,29 +136,23 @@ class DriveCycleGenerator:
                 accel = self.rng.normal(self.profile["brake_mean"],
                                         self.profile["brake_std"])
                 accel = _clamp(accel, -6.0, -0.3)
-
             # Random braking events (stop-go, traffic lights)
             is_random_brake = self.rng.random() < self.profile["brake_probability"]
             if curr_seg in ["stop_go", "urban"] and is_random_brake:
                 accel = self.rng.normal(self.profile["brake_mean"],
                                         self.profile["brake_std"])
                 accel = _clamp(accel, -5.0, -1.0)
-
             # Congestion burst (random slowdown in middle of trip)
             if curr_seg == "stop_go" and self.rng.random() < 0.10:
                 speed = _clamp(speed * 0.3, 0, 10)
                 accel = self.rng.uniform(-2.0, 0.0)
-
             # Update speed
             speed = _clamp(speed + accel * 0.8, 0, seg_hi)
-
             braking = accel < -0.5
-
             # Idle detection
             if speed < IDLE_SPEED_KMH:
                 speed = _clamp(speed, 0, IDLE_SPEED_KMH)
                 accel = _clamp(accel, -0.5, 0.5)
-
             # Power and torque (physics-consistent)
             if braking:
                 power = _clamp(accel * 5.0 + self.rng.normal(0, 1), -25, -1)
@@ -184,19 +167,15 @@ class DriveCycleGenerator:
                 power = _clamp(base_power + self.rng.normal(0, 2), 1, 120)
                 regen = False
                 grade_val = grade  # save for row
-
             # Grade
             if 'grade_val' not in dir():
                 grade_val = self._get_grade(curr_seg, t, total_steps)
 
             torque = self._compute_torque(power, speed, braking)
-
             # Traffic condition based on segment
             traffic = self._get_traffic(curr_seg)
-
             # Aux load varies slowly
             aux_load = _clamp(aux_load + self.rng.normal(0, 0.1), 0.3, 5.0)
-
             # Temperature evolves slowly (thermal inertia)
             if power > 0:
                 temp += self.rng.uniform(0.01, 0.08)  # heating under load
@@ -205,7 +184,6 @@ class DriveCycleGenerator:
             else:
                 temp -= self.rng.uniform(0.0, 0.02)   # slight cooling
             temp = _clamp(temp, 10, 55)
-
             rows.append({
                 "speed": round(speed, 2),
                 "acceleration": round(_clamp(accel, -6, 5), 3),
@@ -222,19 +200,15 @@ class DriveCycleGenerator:
                 "next_segment": next_seg,
                 "driver_profile": self.driver_name,
             })
-
             # SOC evolution (applied AFTER recording the row, affects next step)
             # This is intentional: we label based on current SOC, then drain
             soc_change = self._compute_soc_change(power, regen, braking, speed, soc)
             soc = _clamp(soc + soc_change, 2, 100)
-
             # Reset grade_val for next iteration
             if 'grade_val' in dir():
                 del grade_val
-
         df = pd.DataFrame(rows)
         return df
-
     def _get_grade(self, segment: str, t: int, total: int) -> float:
         """Generate grade angle based on segment type."""
         if segment == "mountain":

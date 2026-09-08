@@ -35,29 +35,23 @@ class HybridDecisionEngine:
         self.predictive_controller = PredictiveEMSController()
         self.safety_layer = SafetyOverrideLayer()
         self.demand_forecaster = DemandForecaster()
-
         # Load ML Assets
         model_path = MODELS_DIR / model_name
         encoder_path = MODELS_DIR / "ems_label_encoder.pkl"
-
         if not model_path.exists() or not encoder_path.exists():
             raise FileNotFoundError(
                 f"Missing ML models in {MODELS_DIR}. Run run_ems.py --train first."
             )
-
         self.model = joblib.load(model_path)
         self.label_encoder = joblib.load(encoder_path)
-
         # Load expected feature names (saved during training)
         feature_path = MODELS_DIR / "ems_feature_names.pkl"
         if feature_path.exists():
             self.expected_features = joblib.load(feature_path)
         else:
             self.expected_features = None
-
         # State history for online temporal feature engineering & demand forecasting
         self.state_history = deque(maxlen=15)
-
     def _update_history(self, state: VehicleState):
         """Append state to history, padding with duplicates if history is empty."""
         if len(self.state_history) == 0:
@@ -65,7 +59,6 @@ class HybridDecisionEngine:
                 self.state_history.append(state)
         else:
             self.state_history.append(state)
-
     def _get_history_dataframe(self) -> pd.DataFrame:
         """Convert deque of VehicleState to DataFrame."""
         rows = []
@@ -73,7 +66,6 @@ class HybridDecisionEngine:
             row_dict = {k: v for k, v in s.__dict__.items() if k != "timestamp"}
             rows.append(row_dict)
         return pd.DataFrame(rows)
-
     def _prepare_features(self, df_history: pd.DataFrame,
                           advisory: Optional[PredictiveAdvisory] = None) -> pd.DataFrame:
         """Apply the exact feature engineering used in training."""
@@ -132,53 +124,32 @@ class HybridDecisionEngine:
                lookahead: list = None,
                distance_remaining: float = 10.0,
                grade_ahead: float = 0.0) -> EMSDecision:
-        """
-        Core decision logic:
-        1. Update state history
-        2. Get predictive advisory from route lookahead
-        3. Query ML model with advisory features and demand forecasts
-        4. Validate against safety bounds
-        5. Fallback to RuleEMS if validation fails
-        """
-        # TEAMMATE INTEGRATION — Alex: Integrate longitudinal dynamics model here
-        # e.g., state.torque_required_nm = alex_dynamics_model.predict_torque(state.speed, state.acceleration)
-        
         # 1. Update history
         self._update_history(state)
-
         # 2. Predictive Advisory
         if lookahead is None:
             lookahead = [state.next_segment]
-
         advisory = self.predictive_controller.advise(
             state, lookahead, distance_remaining, grade_ahead
         )
-
         # 3. Prepare ML Input from history
         df_history = self._get_history_dataframe()
-
         # Suppress logging for row-by-row simulation
         prep_logger = logging.getLogger("src.preprocessing")
         prev_level = prep_logger.getEffectiveLevel()
         prep_logger.setLevel(logging.WARNING)
-
         X = self._prepare_features(df_history, advisory)
-
         prep_logger.setLevel(prev_level)
-
         # 4. ML Prediction
         pred_idx = self.model.predict(X)[0]
         ml_mode = self.label_encoder.inverse_transform([pred_idx])[0]
-
         if hasattr(self.model, "predict_proba"):
             probs = self.model.predict_proba(X)[0]
             confidence = float(probs[pred_idx])
         else:
             confidence = 1.0
-
         # 5. Safety Override Check using SafetyOverrideLayer
         is_safe, violation = self.safety_layer.check_safety(ml_mode, state)
-
         if is_safe:
             # Build advisory reason string
             adv_notes = []
@@ -191,7 +162,6 @@ class HybridDecisionEngine:
             if advisory.charge_sustain:
                 adv_notes.append("charge_sustain")
             adv_str = f" [Advisory: {', '.join(adv_notes)}]" if adv_notes else ""
-
             return EMSDecision(
                 mode=ml_mode,
                 confidence=confidence,
@@ -209,7 +179,6 @@ class HybridDecisionEngine:
             rule_decision.reason = (f"OVERRIDE: {violation} | "
                                     f"Fallback -> {rule_decision.reason}")
             return rule_decision
-
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 2: Standalone supervisor mode-selection function
@@ -251,24 +220,8 @@ def select_mode(
     predicted_demand_kw: float,
     regen_result: RegenResult,
 ) -> EMSMode:
-    """Central mode selection function implementing all supervisor rules.
-
-    Rule priority order (highest to lowest):
-    1. Regenerative Braking (C.RULE6)
-    2. Maximum Acceleration (C.RULE7)
-    3. Low SOC Recovery (C.RULE8)
-    4. Urban Stop-and-Go EV Priority (C.RULE1)
-    5. SOC Preservation Before Urban Zones (C.RULE2)
-    6. Traffic-Aware Mode Planning (C.RULE3)
-    7. GPS Route Preview Mode Planning (C.RULE4)
-    8. ICE Efficiency Sweet Spot (C.RULE5)
-
-    All rules that reference a threshold import it from config.py or vehicle_config.py.
-    Logs the selected rule at INFO level.
-    """
     speed = telemetry.get("speed_kmh", 0.0)
     soc = telemetry.get("soc", 0.0)
-    # Handle percentage representation
     soc_frac = soc / 100.0 if soc > 1.0 else soc
     power_demand = telemetry.get("power_demand_kw", 0.0)
     throttle = telemetry.get("throttle", 0.0)
@@ -276,8 +229,7 @@ def select_mode(
     next_segment = telemetry.get("next_segment", "urban")
     position = telemetry.get("position_km", 0.0)
     rpm = telemetry.get("rpm", 0.0)
-
-    # 1. Regenerative Braking (C.RULE6)
+    # 1. Regenerative Braking 
     if power_demand < 0.0:
         if soc_frac >= MAX_SOC:
             logger.info("RULE6_REGEN: Regen disabled - battery full (SOC=%.2f)", soc_frac)
@@ -287,45 +239,37 @@ def select_mode(
             recovered_wh = clamped_regen * (1.0 / 3600.0) * 1000.0
             logger.info("RULE6_REGEN: Regenerative braking active. Recovered Wh: %.4f", recovered_wh)
             return EMSMode.REGEN
-
-    # 2. Maximum Acceleration (C.RULE7)
+    # 2. Maximum Acceleration 
     if throttle >= 0.90:
         logger.info("RULE7_MAX_ACCEL: Maximum acceleration requested.")
         return EMSMode.HYBRID_ASSIST
-
-    # 3. Low SOC Recovery (C.RULE8)
+    # 3. Low SOC Recovery 
     if soc_frac <= 0.25:
         logger.info("RULE8_SOC_RECOVERY: Low SOC (SOC=%.2f) recovery active.", soc_frac)
         return EMSMode.CHARGE_SUSTAIN
-
-    # 4. Urban Stop-and-Go EV Priority (C.RULE1)
+    # 4. Urban Stop-and-Go EV Priority 
     if speed < 50.0 and (traffic_state == TrafficState.CONGESTED or traffic_state.value == "CONGESTED") and current_segment.lower() == "urban":
         if soc_frac <= (MIN_SOC + 0.05):
             logger.info("RULE1_SUPPRESSED_LOW_SOC: Urban EV Priority suppressed due to low SOC (SOC=%.2f)", soc_frac)
         else:
             logger.info("RULE1_EV_PRIORITY: Urban stop-and-go prioritising EV operation.")
             return EMSMode.EV
-
-    # 5. SOC Preservation Before Urban Zones (C.RULE2)
-    # Check if upcoming segment is urban (via simple route lookahead or position check)
+    # 5. SOC Preservation Before Urban Zones 
     upcoming_urban = next_segment.lower() in ("urban", "stop_go")
     if upcoming_urban and soc_frac < 0.80 and current_segment.lower() in ("highway", "mixed", "arterial"):
         logger.info("RULE2_SOC_PRESERVE: Upcoming urban zone - preserving SOC (SOC=%.2f).", soc_frac)
         return EMSMode.CHARGE_SUSTAIN
-
-    # 6. Traffic-Aware Mode Planning (C.RULE3)
+    # 6. Traffic-Aware Mode Planning 
     if traffic_state == TrafficState.CONGESTED or traffic_state.value == "CONGESTED":
         logger.info("RULE3_TRAFFIC_AWARE: High congestion forecast - biasing EV/Hybrid mode.")
         return EMSMode.HYBRID_ASSIST
-
-    # 7. GPS Route Preview Mode Planning (C.RULE4)
+    # 7. GPS Route Preview Mode Planning 
     if current_segment.lower() == "urban":
         logger.info("RULE4_ROUTE_PREVIEW: Urban segment - favouring EV mode.")
         return EMSMode.EV
     elif current_segment.lower() == "highway":
         logger.info("RULE4_ROUTE_PREVIEW: Highway segment - favouring ICE efficiency mode.")
         return EMSMode.ICE
-
     # 8. ICE Efficiency Sweet Spot (C.RULE5)
     if rpm > 0.0 and (rpm < 2000.0 or rpm > 3000.0):
         logger.info("RULE5_RPM_SWEET_SPOT: Engine outside peak band (%d RPM). Adjusting split.", int(rpm))
@@ -335,7 +279,6 @@ def select_mode(
         else:
             # Deactivate or increase load
             return EMSMode.EV
-
     # Default fallback
     if soc_frac > MIN_SOC:
         return EMSMode.EV
