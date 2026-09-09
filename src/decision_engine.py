@@ -35,21 +35,26 @@ class HybridDecisionEngine:
         self.predictive_controller = PredictiveEMSController()
         self.safety_layer = SafetyOverrideLayer()
         self.demand_forecaster = DemandForecaster()
-        # Load ML Assets
+        # Load ML Assets with robust fallback
         model_path = MODELS_DIR / model_name
         encoder_path = MODELS_DIR / "ems_label_encoder.pkl"
-        if not model_path.exists() or not encoder_path.exists():
-            raise FileNotFoundError(
-                f"Missing ML models in {MODELS_DIR}. Run run_ems.py --train first."
-            )
-        self.model = joblib.load(model_path)
-        self.label_encoder = joblib.load(encoder_path)
-        # Load expected feature names (saved during training)
         feature_path = MODELS_DIR / "ems_feature_names.pkl"
-        if feature_path.exists():
-            self.expected_features = joblib.load(feature_path)
-        else:
-            self.expected_features = None
+
+        self.model = None
+        self.label_encoder = None
+        self.expected_features = None
+
+        try:
+            if model_path.exists() and encoder_path.exists():
+                self.model = joblib.load(model_path)
+                self.label_encoder = joblib.load(encoder_path)
+                if feature_path.exists():
+                    self.expected_features = joblib.load(feature_path)
+                logger.info(f"Successfully loaded decision engine ML model: {model_name}")
+        except Exception as e:
+            logger.warning(f"Could not load ML model ({e}). Using deterministic rule engine fallback.")
+            self.model = None
+
         # State history for online temporal feature engineering & demand forecasting
         self.state_history = deque(maxlen=15)
     def _update_history(self, state: VehicleState):
@@ -140,14 +145,24 @@ class HybridDecisionEngine:
         prep_logger.setLevel(logging.WARNING)
         X = self._prepare_features(df_history, advisory)
         prep_logger.setLevel(prev_level)
-        # 4. ML Prediction
-        pred_idx = self.model.predict(X)[0]
-        ml_mode = self.label_encoder.inverse_transform([pred_idx])[0]
-        if hasattr(self.model, "predict_proba"):
-            probs = self.model.predict_proba(X)[0]
-            confidence = float(probs[pred_idx])
-        else:
-            confidence = 1.0
+        # 4. ML Prediction (or fallback if model is None)
+        if self.model is None or self.label_encoder is None:
+            rule_decision = self.rule_engine.decide(state)
+            rule_decision.source = "RULE_FALLBACK"
+            return rule_decision
+
+        try:
+            pred_idx = self.model.predict(X)[0]
+            ml_mode = self.label_encoder.inverse_transform([pred_idx])[0]
+            if hasattr(self.model, "predict_proba"):
+                probs = self.model.predict_proba(X)[0]
+                confidence = float(probs[pred_idx])
+            else:
+                confidence = 1.0
+        except Exception as e:
+            logger.warning(f"Prediction error ({e}), falling back to rules.")
+            return self.rule_engine.decide(state)
+
         # 5. Safety Override Check using SafetyOverrideLayer
         is_safe, violation = self.safety_layer.check_safety(ml_mode, state)
         if is_safe:
