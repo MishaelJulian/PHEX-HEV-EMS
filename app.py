@@ -442,32 +442,29 @@ if nav_view == "⚡ Live Telemetry & Simulation Replay":
             st.session_state.current_step = 0
         if "is_playing" not in st.session_state:
             st.session_state.is_playing = False
-        if "advance_step" not in st.session_state:
-            st.session_state.advance_step = False
-
-        if st.session_state.advance_step:
-            st.session_state.advance_step = False
-            if st.session_state.current_step < total_steps - 1:
-                st.session_state.current_step += 1
-            else:
-                st.session_state.is_playing = False
 
         if st.session_state.current_step >= total_steps:
             st.session_state.current_step = 0
 
         def step_prev():
-            st.session_state.current_step = max(0, st.session_state.get("current_step", 0) - 1)
+            st.session_state.current_step = max(0, st.session_state.current_step - 1)
             st.session_state.is_playing = False
 
         def step_next():
-            st.session_state.current_step = min(total_steps - 1, st.session_state.get("current_step", 0) + 1)
+            st.session_state.current_step = min(total_steps - 1, st.session_state.current_step + 1)
             st.session_state.is_playing = False
 
         def toggle_play():
+            if st.session_state.current_step >= total_steps - 1:
+                st.session_state.current_step = 0
             st.session_state.is_playing = not st.session_state.get("is_playing", False)
 
         def reset_step():
             st.session_state.current_step = 0
+            st.session_state.is_playing = False
+
+        def on_slider_change():
+            st.session_state.current_step = st.session_state.slider_timestep
             st.session_state.is_playing = False
 
         col_btn1, col_btn2, col_btn3 = st.columns(3)
@@ -485,7 +482,9 @@ if nav_view == "⚡ Live Telemetry & Simulation Replay":
             "Current Timestep (s)",
             min_value=0,
             max_value=max(0, total_steps - 1),
-            key="current_step"
+            value=st.session_state.current_step,
+            key="slider_timestep",
+            on_change=on_slider_change
         )
 
         replay_speed = st.select_slider(
@@ -793,11 +792,10 @@ if nav_view == "⚡ Live Telemetry & Simulation Replay":
     if st.session_state.get("is_playing", False):
         if st.session_state.current_step < total_steps - 1:
             time.sleep(max(0.04, 0.35 / replay_speed))
-            st.session_state.advance_step = True
+            st.session_state.current_step += 1
             st.rerun()
         else:
             st.session_state.is_playing = False
-            st.session_state.advance_step = False
             st.rerun()
 
 # ==============================================================================
