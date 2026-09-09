@@ -438,6 +438,11 @@ if nav_view == "⚡ Live Telemetry & Simulation Replay":
 
         st.markdown("### ⏯️ Simulation Controls")
         
+        # Handle pending step change BEFORE widget instantiation
+        if st.session_state.get("advance_to") is not None:
+            st.session_state.current_step = st.session_state.advance_to
+            st.session_state.advance_to = None
+
         if "current_step" not in st.session_state:
             st.session_state.current_step = 0
         if "is_playing" not in st.session_state:
@@ -447,20 +452,20 @@ if nav_view == "⚡ Live Telemetry & Simulation Replay":
             st.session_state.current_step = 0
 
         def step_prev():
-            st.session_state.current_step = max(0, st.session_state.current_step - 1)
+            st.session_state.advance_to = max(0, st.session_state.get("current_step", 0) - 1)
             st.session_state.is_playing = False
 
         def step_next():
-            st.session_state.current_step = min(total_steps - 1, st.session_state.current_step + 1)
+            st.session_state.advance_to = min(total_steps - 1, st.session_state.get("current_step", 0) + 1)
             st.session_state.is_playing = False
 
         def toggle_play():
-            if st.session_state.current_step >= total_steps - 1:
-                st.session_state.current_step = 0
+            if st.session_state.get("current_step", 0) >= total_steps - 1:
+                st.session_state.advance_to = 0
             st.session_state.is_playing = not st.session_state.get("is_playing", False)
 
         def reset_step():
-            st.session_state.current_step = 0
+            st.session_state.advance_to = 0
             st.session_state.is_playing = False
 
         col_btn1, col_btn2, col_btn3 = st.columns(3)
@@ -784,9 +789,10 @@ if nav_view == "⚡ Live Telemetry & Simulation Replay":
 
     # Play loop
     if st.session_state.get("is_playing", False):
-        if st.session_state.current_step < total_steps - 1:
+        curr_s = st.session_state.get("current_step", 0)
+        if curr_s < total_steps - 1:
             time.sleep(max(0.04, 0.35 / replay_speed))
-            st.session_state.current_step += 1
+            st.session_state.advance_to = curr_s + 1
             st.rerun()
         else:
             st.session_state.is_playing = False
