@@ -463,10 +463,6 @@ if nav_view == "⚡ Live Telemetry & Simulation Replay":
             st.session_state.current_step = 0
             st.session_state.is_playing = False
 
-        def on_slider_change():
-            st.session_state.current_step = st.session_state.slider_timestep
-            st.session_state.is_playing = False
-
         col_btn1, col_btn2, col_btn3 = st.columns(3)
         with col_btn1:
             st.button("⏪ Prev", use_container_width=True, on_click=step_prev)
@@ -482,9 +478,7 @@ if nav_view == "⚡ Live Telemetry & Simulation Replay":
             "Current Timestep (s)",
             min_value=0,
             max_value=max(0, total_steps - 1),
-            value=st.session_state.current_step,
-            key="slider_timestep",
-            on_change=on_slider_change
+            key="current_step"
         )
 
         replay_speed = st.select_slider(
